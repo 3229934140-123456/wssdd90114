@@ -97,6 +97,8 @@ export default function EditPage() {
   const [reportTitle, setReportTitle] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [showDraftBox, setShowDraftBox] = useState(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitComment, setSubmitComment] = useState('');
 
   const draftReports = useMemo(
     () => reportsList.filter((r) => r.status === 'draft').sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
@@ -192,7 +194,14 @@ export default function EditPage() {
 
   const handleSubmit = () => {
     if (!currentReport) return;
-    submitReport();
+    setShowSubmitModal(true);
+  };
+
+  const confirmSubmit = () => {
+    if (!currentReport) return;
+    submitReport(submitComment || undefined);
+    setShowSubmitModal(false);
+    setSubmitComment('');
     setToastMessage('提交送审成功！正在跳转审核列表...');
     setShowSuccessToast(true);
     setTimeout(() => {
@@ -274,6 +283,52 @@ export default function EditPage() {
                 className="px-4 py-2 rounded-lg bg-gov-deepblue text-sm font-medium text-white hover:bg-gov-navy transition-colors"
               >
                 确认切换
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSubmitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slideRight">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+                <Send className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">提交送审</h3>
+                <p className="text-sm text-gray-500">确认提交专报送审</p>
+              </div>
+            </div>
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                提交说明 <span className="text-gray-400 text-xs">（可选，填写后将在送审记录和版本对比中显示）</span>
+              </label>
+              <textarea
+                value={submitComment}
+                onChange={(e) => setSubmitComment(e.target.value)}
+                placeholder="如：补充了地铁故障后续处置进展，更新了风险研判等级..."
+                rows={4}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all resize-none"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowSubmitModal(false);
+                  setSubmitComment('');
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmSubmit}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gov-deepblue text-sm font-medium text-white hover:bg-gov-navy transition-colors"
+              >
+                <Send className="w-4 h-4" />
+                确认提交
               </button>
             </div>
           </div>

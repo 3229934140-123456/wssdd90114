@@ -25,6 +25,12 @@ const TEMPLATE_TYPE_MAP: Record<string, Report['type']> = {
   topic: 'special',
 };
 
+const TEMPLATE_KEY_TITLE_MAP: Record<string, string> = {
+  daily: '舆情专报（日报）',
+  urgent: '突发事件快报',
+  topic: '专题跟踪报告',
+};
+
 const TEMPLATE_TITLE_MAP: Record<Report['type'], string> = {
   daily: '舆情专报（日报）',
   weekly: '舆情专报（周报）',
@@ -214,16 +220,36 @@ function saveReviewsToStorage(reviews: ReviewRecord[]): void {
   }
 }
 
+function backfillTemplateKey(report: Report): Report {
+  if (report.templateKey) return report;
+  let key: string;
+  if (report.templateId?.includes('urgent') || report.title.includes('突发') || report.title.includes('快报')) {
+    key = 'urgent';
+  } else if (report.templateId?.includes('topic') || report.title.includes('专题跟踪') || report.title.includes('专题')) {
+    key = 'topic';
+  } else if (report.type === 'daily') {
+    key = 'daily';
+  } else {
+    key = report.type === 'special' ? 'topic' : 'daily';
+  }
+  return {
+    ...report,
+    templateKey: key,
+    templateName: TEMPLATE_TITLE_MAP[report.type],
+  };
+}
+
 function loadReportsFromStorage(): Report[] {
   try {
     const stored = localStorage.getItem(REPORTS_STORAGE_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const parsed: Report[] = JSON.parse(stored);
+      return parsed.map(backfillTemplateKey);
     }
   } catch (e) {
     console.error('Failed to load reports from localStorage:', e);
   }
-  return initialReports;
+  return initialReports.map(backfillTemplateKey);
 }
 
 function loadReviewsFromStorage(): ReviewRecord[] {
@@ -256,11 +282,12 @@ interface AppState {
   addSensitiveMark: (sectionId: string, mark: Omit<SensitiveMark, 'id' | 'markerId' | 'markerName' | 'markedAt'>) => void;
   updateReportStatus: (status: Report['status']) => void;
   updateReportTitle: (title: string) => void;
-  submitReport: () => void;
+  submitReport: (submitComment?: string) => void;
   saveDraft: () => void;
   loadDraft: (reportId: string) => void;
   approveReport: (reportId: string, comment: string, reviewerId?: string, reviewerName?: string, reviewerRole?: string) => void;
   rejectReport: (reportId: string, reason: string, reviewerId?: string, reviewerName?: string, reviewerRole?: string) => void;
+  addLeaderComment: (reportId: string, comment: string, reviewerId: string, reviewerName: string, reviewerRole: string) => void;
   loadPersistedData: () => void;
 }
 
@@ -339,7 +366,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       id: generateId('report'),
       templateId: `tpl-${template}`,
       templateKey: template,
-      templateName: TEMPLATE_TITLE_MAP[reportType],
+      templateName: TEMPLATE_KEY_TITLE_MAP[template] || TEMPLATE_TITLE_MAP[reportType],
       title: generateReportTitle(reportType),
       type: reportType,
       summary: generateOverview(clues),
@@ -510,6 +537,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       reviewerName: rName,
       reviewerRole: rRole,
       createdAt: now,
+      version: reportsList[reportIndex].version,
       changes: [
         { field: 'status', oldValue: reportsList[reportIndex].status, newValue: 'approved' },
       ],
@@ -553,6 +581,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       reviewerName: rName,
       reviewerRole: rRole,
       createdAt: now,
+      version: reportsList[reportIndex].version,
       changes: [
         { field: 'status', oldValue: reportsList[reportIndex].status, newValue: 'rejected' },
         { field: 'rejectReason', oldValue: reportsList[reportIndex].rejectReason || '', newValue: reason },
@@ -569,7 +598,37 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
-  submitReport: () => {
+  addLeaderComment: (reportId: string, comment: string, reviewerId: string, reviewerName: string, reviewerRole: string) => {
+    const { reportsList, reviewRecordsList } = get();
+    const reportIndex = reportsList.findIndex((r) => r.id === reportId);
+    if (reportIndex < 0) return;
+    const now = formatDate(new Date());
+    const report = reportsList[reportIndex];
+
+    const newReviewRecord: ReviewRecord = {
+      id: generateId('rv'),
+      targetId: reportId,
+      targetType: 'report',
+      action: 'comment',
+      result: 'pass',
+      comment,
+      reviewerId,
+      reviewerName,
+      reviewerRole,
+      createdAt: now,
+      version: report.version,
+      changes: [],
+    };
+    const newReviewRecordsList = [...reviewRecordsList, newReviewRecord];
+
+    saveReviewsToStorage(newReviewRecordsList);
+
+    set({
+      reviewRecordsList: newReviewRecordsList,
+    });
+  },
+
+  submitReport: (submitComment?: string) => {
     const { currentReport, userInfo, reportsList, reviewRecordsList } = get();
     if (!currentReport) return;
     const now = formatDate(new Date());
@@ -597,10 +656,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       targetType: 'report',
       action: 'submit',
       result: 'pending',
+      comment: submitComment || undefined,
       reviewerId: userInfo.id,
       reviewerName: userInfo.name,
       reviewerRole: userInfo.role,
       createdAt: now,
+      version: updatedReport.version,
       changes: [
         { field: 'status', oldValue: currentReport.status, newValue: 'submitted' },
       ],

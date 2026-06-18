@@ -127,6 +127,7 @@ export interface ReviewRecord {
   reviewerName: string;
   reviewerRole?: string;
   createdAt: string;
+  version?: number;
   attachments?: string[];
   changes?: Array<{
     field: string;

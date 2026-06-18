@@ -4,7 +4,8 @@ export const reports: Report[] = [
   {
     id: 'report-001',
     templateId: 'tpl-daily',
-    templateName: '舆情日报模板',
+    templateKey: 'daily',
+    templateName: '舆情专报（日报）',
     title: '舆情专报（日报）2026年6月18日',
     type: 'daily',
     period: {
@@ -94,7 +95,8 @@ export const reports: Report[] = [
   {
     id: 'report-002',
     templateId: 'tpl-urgent',
-    templateName: '突发事件快报模板',
+    templateKey: 'urgent',
+    templateName: '突发事件快报',
     title: '突发事件快报：石景山区游乐园过山车故障事件',
     type: 'special',
     summary: '6月17日15时30分，石景山区游乐园"极速飞车"过山车突发机械故障，28名游客被困高空40分钟后全部安全获救，2人因惊吓过度送医检查，无人员重伤。事件引发全网关注，微博话题阅读量近1亿次。',
@@ -183,7 +185,8 @@ export const reports: Report[] = [
   {
     id: 'report-003',
     templateId: 'tpl-topic',
-    templateName: '专题跟踪报告模板',
+    templateKey: 'topic',
+    templateName: '专题跟踪报告',
     title: '专题跟踪：通州区萧太后河水环境污染问题',
     type: 'special',
     summary: '6月16日B站UP主曝光通州区萧太后河水体黑臭问题，视频播放量超200万，引发全网关注。这是该河段今年第三次被曝光，此前两次整改未达预期，公众质疑治理成效。',
@@ -266,7 +269,8 @@ export const reports: Report[] = [
   {
     id: 'report-004',
     templateId: 'tpl-daily',
-    templateName: '舆情日报模板',
+    templateKey: 'daily',
+    templateName: '舆情专报（日报）',
     title: '舆情专报（日报）2026年6月17日',
     type: 'daily',
     period: {
@@ -336,7 +340,8 @@ export const reports: Report[] = [
   {
     id: 'report-005',
     templateId: 'tpl-topic',
-    templateName: '专题跟踪报告模板',
+    templateKey: 'topic',
+    templateName: '专题跟踪报告',
     title: '专题跟踪：昌平区御景湾延期交房问题',
     type: 'special',
     summary: '昌平区北七家"御景湾"项目停工超8个月，800户业主无法按期收房，开发商明确表示资金链断裂。业主已集体上访3次，本周计划到市政府上访，存在重大群体性事件风险。',

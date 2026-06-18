@@ -76,7 +76,7 @@ const actionLabels: Record<ReviewRecord['action'], string> = {
   assign: '指派',
   transfer: '转办',
   close: '关闭',
-  comment: '批注',
+  comment: '加签意见',
 };
 
 const actionColors: Record<ReviewRecord['action'], { dot: string; tag: string }> = {
@@ -94,7 +94,7 @@ interface ReviewPageProps {
 }
 
 export default function ReviewPage({ className }: ReviewPageProps) {
-  const { reportsList, reviewRecordsList, approveReport, rejectReport } = useAppStore();
+  const { reportsList, reviewRecordsList, approveReport, rejectReport, addLeaderComment } = useAppStore();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [templateFilter, setTemplateFilter] = useState<string>('all');
@@ -108,6 +108,7 @@ export default function ReviewPage({ className }: ReviewPageProps) {
   const [showSensitiveMarks, setShowSensitiveMarks] = useState(true);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showCommentModal, setShowCommentModal] = useState(false);
   const [reviewComment, setReviewComment] = useState('');
   const [selectedReviewer, setSelectedReviewer] = useState(REVIEWER_OPTIONS[0]);
 
@@ -229,14 +230,15 @@ export default function ReviewPage({ className }: ReviewPageProps) {
     if (version === report.version) {
       return report.sections.map((s) => `## ${s.title}\n\n${s.content || ''}`).join('\n\n');
     }
-    const ratio = version / report.version;
-    return report.sections
-      .map((s) => {
-        const content = s.content || '';
-        const truncLen = Math.floor(content.length * (0.5 + ratio * 0.5));
-        return `## ${s.title}\n\n${content.slice(0, truncLen)}${truncLen < content.length ? '...' : ''}`;
-      })
+    const vReviews = relatedReviews.filter((rv) => rv.version === version);
+    const header = `版本 V${version}`;
+    const statusInfo = vReviews.length > 0
+      ? vReviews.map((rv) => `[${actionLabels[rv.action]}] ${rv.reviewerName} ${rv.createdAt}`).join('\n')
+      : '';
+    const content = report.sections
+      .map((s) => `## ${s.title}\n\n${s.content || ''}`)
       .join('\n\n');
+    return statusInfo ? `${header}\n${statusInfo}\n\n---\n\n${content}` : `${header}\n\n${content}`;
   };
 
   const highlightSensitive = (text: string, sensitiveMarks?: SensitiveMark[]) => {
@@ -326,6 +328,13 @@ export default function ReviewPage({ className }: ReviewPageProps) {
     if (!selectedReport || !reviewComment.trim()) return;
     rejectReport(selectedReport.id, reviewComment, selectedReviewer.id, selectedReviewer.name, selectedReviewer.role);
     setShowRejectModal(false);
+    setReviewComment('');
+  };
+
+  const handleAddComment = () => {
+    if (!selectedReport || !reviewComment.trim()) return;
+    addLeaderComment(selectedReport.id, reviewComment, selectedReviewer.id, selectedReviewer.name, selectedReviewer.role);
+    setShowCommentModal(false);
     setReviewComment('');
   };
 
@@ -567,6 +576,10 @@ export default function ReviewPage({ className }: ReviewPageProps) {
                       setReviewComment('');
                       setShowRejectModal(true);
                     }}
+                    onShowComment={() => {
+                      setReviewComment('');
+                      setShowCommentModal(true);
+                    }}
                   />
                 )}
                 {activeTab === 'diff' && (
@@ -748,6 +761,87 @@ export default function ReviewPage({ className }: ReviewPageProps) {
                   </div>
                 </div>
               )}
+
+              {showCommentModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slideRight">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
+                        <ClipboardCheck className="h-5 w-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">加签意见</h3>
+                        <p className="text-sm text-gray-500">以领导身份添加审批意见</p>
+                      </div>
+                    </div>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        签署领导 <span className="text-red-500 text-xs">*必选</span>
+                      </label>
+                      <div className="space-y-2">
+                        {REVIEWER_OPTIONS.map((leader) => (
+                          <button
+                            key={leader.id}
+                            onClick={() => setSelectedReviewer(leader)}
+                            className={cn(
+                              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all',
+                              selectedReviewer.id === leader.id
+                                ? 'border-amber-300 bg-amber-50 ring-1 ring-amber-200'
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            )}
+                          >
+                            <div className={cn(
+                              'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs',
+                              selectedReviewer.id === leader.id ? 'bg-amber-500' : 'bg-gray-400'
+                            )}>
+                              {leader.name.slice(0, 1)}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-gray-800">{leader.name}</div>
+                              <div className="text-xs text-gray-500">{leader.role}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        意见内容 <span className="text-red-500 text-xs">*必填</span>
+                      </label>
+                      <textarea
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        placeholder="请输入加签意见..."
+                        rows={4}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400 transition-all resize-none"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        onClick={() => {
+                          setShowCommentModal(false);
+                          setReviewComment('');
+                        }}
+                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleAddComment}
+                        disabled={!reviewComment.trim()}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors',
+                          reviewComment.trim()
+                            ? 'bg-amber-500 hover:bg-amber-600'
+                            : 'bg-gray-300 cursor-not-allowed'
+                        )}
+                      >
+                        提交意见
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -886,12 +980,14 @@ function ApprovalDetail({
   showActions,
   onShowApprove,
   onShowReject,
+  onShowComment,
 }: {
   report: Report;
   reviews: ReviewRecord[];
   showActions: boolean;
   onShowApprove: () => void;
   onShowReject: () => void;
+  onShowComment: () => void;
 }) {
   const canReview = report.status === 'submitted' || report.status === 'reviewing';
 
@@ -953,6 +1049,13 @@ function ApprovalDetail({
             >
               <XCircle className="w-4 h-4" />
               退回
+            </button>
+            <button
+              onClick={onShowComment}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-colors shadow-sm"
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              加签意见
             </button>
           </div>
         )}
@@ -1167,23 +1270,55 @@ function VersionCompare({
 
   const changeSummary = useMemo(() => {
     if (!reviews || reviews.length === 0) return [];
-    return reviews.map((rv) => {
-      const actionLabel = actionLabels[rv.action];
-      const actionColor = actionColors[rv.action];
-      const changeDesc = rv.changes?.map((c) => `${c.field}: ${c.oldValue || '(空)'} → ${c.newValue}`).join('；') || '';
-      return {
-        id: rv.id,
-        action: rv.action,
-        actionLabel,
-        actionColor,
-        user: rv.reviewerName,
-        role: rv.reviewerRole,
-        time: rv.createdAt,
-        comment: rv.comment,
-        changeDesc,
-      };
-    });
-  }, [reviews]);
+    const minV = Math.min(effectiveOld, effectiveNew);
+    const maxV = Math.max(effectiveOld, effectiveNew);
+    return reviews
+      .filter((rv) => {
+        if (rv.version) return rv.version >= minV && rv.version <= maxV;
+        return true;
+      })
+      .map((rv) => {
+        const actionLabel = actionLabels[rv.action];
+        const actionColor = actionColors[rv.action];
+        const changeDesc = rv.changes?.map((c) => `${c.field}: ${c.oldValue || '(空)'} → ${c.newValue}`).join('；') || '';
+        return {
+          id: rv.id,
+          action: rv.action,
+          actionLabel,
+          actionColor,
+          user: rv.reviewerName,
+          role: rv.reviewerRole,
+          time: rv.createdAt,
+          comment: rv.comment,
+          changeDesc,
+          version: rv.version,
+        };
+      });
+  }, [reviews, effectiveOld, effectiveNew]);
+
+  const statusMap: Record<string, string> = {
+    draft: '草稿',
+    submitted: '已提交',
+    reviewing: '审核中',
+    approved: '已通过',
+    rejected: '已退回',
+  };
+
+  const inferVersionStatus = (v: number): string => {
+    if (v === report.version) return statusMap[report.status] || report.status;
+    const submitReview = reviews.find((rv) => rv.action === 'submit' && rv.version === v);
+    if (submitReview) return '已提交';
+    const approveReview = reviews.find((rv) => rv.action === 'approve' && rv.version === v);
+    if (approveReview) return '已通过';
+    const rejectReview = reviews.find((rv) => rv.action === 'reject' && rv.version === v);
+    if (rejectReview) return '已退回';
+    if (v < report.version) return '已提交';
+    return '草稿';
+  };
+
+  const getVersionReviews = (v: number): ReviewRecord[] => {
+    return reviews.filter((rv) => rv.version === v);
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -1207,6 +1342,9 @@ function VersionCompare({
               disabledVersions={[effectiveNew]}
               color="red"
             />
+            <div className="mt-1.5 text-xs text-gray-500">
+              状态：<span className="font-medium text-gray-700">{inferVersionStatus(effectiveOld)}</span>
+            </div>
           </div>
           <ArrowRight className="w-5 h-5 text-gray-400 mt-5 flex-shrink-0" />
           <div className="flex-1">
@@ -1218,15 +1356,23 @@ function VersionCompare({
               disabledVersions={[effectiveOld]}
               color="green"
             />
+            <div className="mt-1.5 text-xs text-gray-500">
+              状态：<span className="font-medium text-gray-700">{inferVersionStatus(effectiveNew)}</span>
+            </div>
           </div>
         </div>
       </div>
 
       {changeSummary.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <ClipboardCheck className="w-5 h-5 text-gov-deepblue" />
-            <h2 className="text-base font-bold text-gray-800">变更摘要</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-gov-deepblue" />
+              <h2 className="text-base font-bold text-gray-800">变更摘要</h2>
+            </div>
+            <span className="text-xs text-gray-400">
+              V{effectiveOld} → V{effectiveNew} 之间
+            </span>
           </div>
           <div className="space-y-3">
             {changeSummary.map((item) => (
@@ -1238,6 +1384,8 @@ function VersionCompare({
                     ? 'border-red-200 bg-red-50/40'
                     : item.action === 'approve'
                     ? 'border-green-200 bg-green-50/40'
+                    : item.action === 'comment'
+                    ? 'border-amber-200 bg-amber-50/40'
                     : 'border-gray-200 bg-gray-50/40'
                 )}
               >
@@ -1250,6 +1398,11 @@ function VersionCompare({
                   >
                     {item.actionLabel}
                   </span>
+                  {item.version && (
+                    <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                      V{item.version}
+                    </span>
+                  )}
                   <span className="text-sm font-medium text-gray-800">{item.user}</span>
                   {item.role && <span className="text-xs text-gray-500">{item.role}</span>}
                   <span className="text-xs text-gray-400 flex items-center gap-1">
@@ -1262,6 +1415,7 @@ function VersionCompare({
                     {item.action === 'reject' && '退回原因：'}
                     {item.action === 'approve' && '审批意见：'}
                     {item.action === 'submit' && '提交说明：'}
+                    {item.action === 'comment' && '加签意见：'}
                     {item.comment}
                   </p>
                 )}
@@ -1275,6 +1429,42 @@ function VersionCompare({
           </div>
         </div>
       )}
+
+      <div className="grid grid-cols-2 gap-4">
+        {[effectiveOld, effectiveNew].map((v, idx) => {
+          const vReviews = getVersionReviews(v);
+          const label = idx === 0 ? '旧版本' : '新版本';
+          const color = idx === 0 ? 'border-red-200' : 'border-green-200';
+          return (
+            <div key={`${label}-${v}`} className={cn('bg-white rounded-xl border p-4 shadow-sm', color)}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-bold text-gray-800">{label} V{v}</span>
+                <span className="text-xs text-gray-500">{inferVersionStatus(v)}</span>
+              </div>
+              {vReviews.length > 0 ? (
+                <div className="space-y-2">
+                  {vReviews.map((rv) => (
+                    <div key={rv.id} className="text-xs space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn('px-1.5 py-0.5 rounded font-medium border', actionColors[rv.action].tag)}>
+                          {actionLabels[rv.action]}
+                        </span>
+                        <span className="text-gray-700 font-medium">{rv.reviewerName}</span>
+                        <span className="text-gray-400">{formatTime(rv.createdAt, 'MM-DD HH:mm')}</span>
+                      </div>
+                      {rv.comment && (
+                        <p className="text-gray-600 pl-1 truncate">{rv.comment}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">暂无该版本处理记录</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       <DiffViewer
         oldText={generateContent(effectiveOld)}
