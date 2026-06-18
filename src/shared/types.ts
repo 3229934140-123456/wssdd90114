@@ -83,6 +83,7 @@ export interface SensitiveMark {
 export interface Report {
   id: string;
   templateId?: string;
+  templateKey?: string;
   templateName?: string;
   title: string;
   type: 'daily' | 'weekly' | 'monthly' | 'special';

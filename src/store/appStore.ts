@@ -13,6 +13,12 @@ import { reviews as initialReviews } from '../data/reviews';
 const REPORTS_STORAGE_KEY = 'opinion-reports';
 const REVIEWS_STORAGE_KEY = 'opinion-reviews';
 
+const TEMPLATE_KEY_LABELS: Record<string, string> = {
+  daily: '日报',
+  urgent: '突发快报',
+  topic: '专题跟踪',
+};
+
 const TEMPLATE_TYPE_MAP: Record<string, Report['type']> = {
   daily: 'daily',
   urgent: 'special',
@@ -253,8 +259,8 @@ interface AppState {
   submitReport: () => void;
   saveDraft: () => void;
   loadDraft: (reportId: string) => void;
-  approveReport: (reportId: string, comment: string) => void;
-  rejectReport: (reportId: string, reason: string) => void;
+  approveReport: (reportId: string, comment: string, reviewerId?: string, reviewerName?: string, reviewerRole?: string) => void;
+  rejectReport: (reportId: string, reason: string, reviewerId?: string, reviewerName?: string, reviewerRole?: string) => void;
   loadPersistedData: () => void;
 }
 
@@ -332,6 +338,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const report: Report = {
       id: generateId('report'),
       templateId: `tpl-${template}`,
+      templateKey: template,
       templateName: TEMPLATE_TITLE_MAP[reportType],
       title: generateReportTitle(reportType),
       type: reportType,
@@ -468,21 +475,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (report) {
       set({
         currentReport: { ...report },
+        selectedClueIds: [...(report.clueIds || [])],
       });
     }
   },
 
-  approveReport: (reportId: string, comment: string) => {
+  approveReport: (reportId: string, comment: string, reviewerId?: string, reviewerName?: string, reviewerRole?: string) => {
     const { reportsList, reviewRecordsList, userInfo } = get();
     const reportIndex = reportsList.findIndex((r) => r.id === reportId);
     if (reportIndex < 0) return;
     const now = formatDate(new Date());
+    const rId = reviewerId || userInfo.id;
+    const rName = reviewerName || userInfo.name;
+    const rRole = reviewerRole || userInfo.role;
     const updatedReport: Report = {
       ...reportsList[reportIndex],
       status: 'approved',
       updatedAt: now,
-      approverId: userInfo.id,
-      approverName: userInfo.name,
+      approverId: rId,
+      approverName: rName,
       approvedAt: now,
     };
     const newReportsList = [...reportsList];
@@ -495,9 +506,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       action: 'approve',
       result: 'pass',
       comment,
-      reviewerId: userInfo.id,
-      reviewerName: userInfo.name,
-      reviewerRole: userInfo.role,
+      reviewerId: rId,
+      reviewerName: rName,
+      reviewerRole: rRole,
       createdAt: now,
       changes: [
         { field: 'status', oldValue: reportsList[reportIndex].status, newValue: 'approved' },
@@ -514,11 +525,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
-  rejectReport: (reportId: string, reason: string) => {
+  rejectReport: (reportId: string, reason: string, reviewerId?: string, reviewerName?: string, reviewerRole?: string) => {
     const { reportsList, reviewRecordsList, userInfo } = get();
     const reportIndex = reportsList.findIndex((r) => r.id === reportId);
     if (reportIndex < 0) return;
     const now = formatDate(new Date());
+    const rId = reviewerId || userInfo.id;
+    const rName = reviewerName || userInfo.name;
+    const rRole = reviewerRole || userInfo.role;
     const updatedReport: Report = {
       ...reportsList[reportIndex],
       status: 'rejected',
@@ -535,9 +549,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       action: 'reject',
       result: 'fail',
       comment: reason,
-      reviewerId: userInfo.id,
-      reviewerName: userInfo.name,
-      reviewerRole: userInfo.role,
+      reviewerId: rId,
+      reviewerName: rName,
+      reviewerRole: rRole,
       createdAt: now,
       changes: [
         { field: 'status', oldValue: reportsList[reportIndex].status, newValue: 'rejected' },
@@ -606,3 +620,5 @@ export const useAppStore = create<AppState>()((set, get) => ({
 }));
 
 export default useAppStore;
+
+export { TEMPLATE_KEY_LABELS };

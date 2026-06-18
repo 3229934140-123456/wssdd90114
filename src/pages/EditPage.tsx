@@ -16,9 +16,11 @@ import {
   User,
   Calendar,
   Tag,
+  Archive,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAppStore, type TemplateType } from '@/store/appStore';
+import { useAppStore, type TemplateType, TEMPLATE_KEY_LABELS } from '@/store/appStore';
 import { clues as allClues } from '@/data/clues';
 import TemplateCard from '@/components/TemplateCard';
 import SectionEditor from '@/components/SectionEditor';
@@ -76,6 +78,7 @@ export default function EditPage() {
     selectedClueIds,
     currentReport,
     userInfo,
+    reportsList,
     toggleClue,
     createReport,
     updateSection,
@@ -83,6 +86,7 @@ export default function EditPage() {
     submitReport,
     updateReportTitle,
     saveDraft,
+    loadDraft,
   } = useAppStore();
 
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateType>('daily');
@@ -92,6 +96,12 @@ export default function EditPage() {
   const [pendingTemplate, setPendingTemplate] = useState<TemplateType | null>(null);
   const [reportTitle, setReportTitle] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const [showDraftBox, setShowDraftBox] = useState(false);
+
+  const draftReports = useMemo(
+    () => reportsList.filter((r) => r.status === 'draft').sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [reportsList]
+  );
 
   const selectedClues = useMemo(() => {
     return allClues.filter((c) => selectedClueIds.includes(c.id));
@@ -106,7 +116,15 @@ export default function EditPage() {
     if (currentReport && currentReport.title) {
       setReportTitle(currentReport.title);
     }
-  }, [currentReport?.id, currentReport?.title]);
+    if (currentReport?.templateKey) {
+      setSelectedTemplate(currentReport.templateKey as TemplateType);
+    }
+  }, [currentReport?.id, currentReport?.title, currentReport?.templateKey]);
+
+  const handleLoadDraft = (reportId: string) => {
+    loadDraft(reportId);
+    setShowDraftBox(false);
+  };
 
   const handleTitleChange = (value: string) => {
     setReportTitle(value);
@@ -323,7 +341,7 @@ export default function EditPage() {
             )}
           </div>
 
-          <div className="p-4 border-t border-gray-100">
+          <div className="p-4 border-t border-gray-100 space-y-2">
             <button
               onClick={() => navigate('/clues')}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-600 hover:border-gov-deepblue hover:text-gov-deepblue hover:bg-blue-50/50 transition-all duration-200"
@@ -331,7 +349,74 @@ export default function EditPage() {
               <Plus className="h-4 w-4" />
               继续添加线索
             </button>
+            <button
+              onClick={() => setShowDraftBox(!showDraftBox)}
+              className={cn(
+                'w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200',
+                showDraftBox
+                  ? 'border-gov-deepblue text-gov-deepblue bg-blue-50/50'
+                  : 'border-dashed border-gray-300 text-gray-600 hover:border-gov-deepblue hover:text-gov-deepblue hover:bg-blue-50/50'
+              )}
+            >
+              <Archive className="h-4 w-4" />
+              草稿箱
+              {draftReports.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-gov-deepblue text-white">
+                  {draftReports.length}
+                </span>
+              )}
+            </button>
           </div>
+
+          {showDraftBox && (
+            <div className="border-t border-gray-200 bg-gray-50/50 max-h-60 overflow-y-auto">
+              <div className="p-3 space-y-2">
+                {draftReports.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-gray-400">
+                    <Archive className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    暂无保存的草稿
+                  </div>
+                ) : (
+                  draftReports.map((draft) => {
+                    const sensitiveCount = draft.sections.reduce(
+                      (sum, s) => sum + (s.sensitiveMarks?.length || 0), 0
+                    );
+                    return (
+                      <button
+                        key={draft.id}
+                        onClick={() => handleLoadDraft(draft.id)}
+                        className={cn(
+                          'w-full text-left p-3 rounded-lg border transition-all hover:shadow-sm',
+                          currentReport?.id === draft.id
+                            ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-100'
+                            : 'bg-white border-gray-200 hover:border-gray-300'
+                        )}
+                      >
+                        <p className="text-sm font-medium text-gray-800 truncate mb-1">
+                          {draft.title || '未命名草稿'}
+                        </p>
+                        <div className="flex items-center gap-2 flex-wrap text-[11px] text-gray-500">
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">
+                            {TEMPLATE_KEY_LABELS[draft.templateKey || 'daily']}
+                          </span>
+                          <span className="flex items-center gap-0.5">
+                            <Clock className="w-3 h-3" />
+                            {formatTime(draft.updatedAt, 'MM-DD HH:mm')}
+                          </span>
+                          {sensitiveCount > 0 && (
+                            <span className="text-amber-600">
+                              {sensitiveCount}处敏感
+                            </span>
+                          )}
+                          <span>{draft.clueIds.length}条线索</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="w-[55%] flex-1 flex flex-col overflow-hidden">
