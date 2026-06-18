@@ -88,11 +88,15 @@ export default function EditPage() {
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingTemplate, setPendingTemplate] = useState<TemplateType | null>(null);
   const [reportTitle, setReportTitle] = useState('');
-  const [localSensitiveMarks, setLocalSensitiveMarks] = useState<SensitiveMark[]>([]);
 
   const selectedClues = useMemo(() => {
     return allClues.filter((c) => selectedClueIds.includes(c.id));
   }, [selectedClueIds]);
+
+  const allSensitiveMarks = useMemo(() => {
+    if (!currentReport) return [];
+    return currentReport.sections.flatMap((section) => section.sensitiveMarks || []);
+  }, [currentReport]);
 
   const handleGenerate = async () => {
     if (selectedClues.length === 0) return;
@@ -143,17 +147,6 @@ export default function EditPage() {
       content: text,
       level: level as SensitiveMark['level'],
     });
-    const localMark: SensitiveMark = {
-      id: `mark-local-${Date.now()}`,
-      clueId: currentReport?.clueIds[0] || '',
-      markType: 'keyword',
-      content: text,
-      level: level as SensitiveMark['level'],
-      markerId: userInfo.id,
-      markerName: userInfo.name,
-      markedAt: new Date().toLocaleString('zh-CN'),
-    };
-    setLocalSensitiveMarks((prev) => [...prev, localMark]);
   };
 
   const handleSaveDraft = () => {
@@ -169,6 +162,37 @@ export default function EditPage() {
       setShowSuccessToast(false);
       navigate('/review');
     }, 2000);
+  };
+
+  const renderPreviewWithHighlights = (text: string, marks: SensitiveMark[]): React.ReactNode => {
+    if (!marks || marks.length === 0) return text;
+    let result: React.ReactNode[] = [text];
+    marks.forEach((mark, markIndex) => {
+      const bgColor = mark.level >= 3 ? 'bg-orange-200' : 'bg-yellow-200';
+      const newResult: React.ReactNode[] = [];
+      result.forEach((item, itemIndex) => {
+        if (typeof item === 'string') {
+          const parts = item.split(mark.content);
+          parts.forEach((part, partIndex) => {
+            if (part) newResult.push(part);
+            if (partIndex < parts.length - 1) {
+              newResult.push(
+                <span
+                  key={`mark-${markIndex}-${itemIndex}-${partIndex}`}
+                  className={`${bgColor} px-0.5 rounded text-gray-900 font-medium`}
+                >
+                  {mark.content}
+                </span>
+              );
+            }
+          });
+        } else {
+          newResult.push(item);
+        }
+      });
+      result = newResult;
+    });
+    return result;
   };
 
   const displayTitle = reportTitle || currentReport?.title || '';
@@ -368,6 +392,7 @@ export default function EditPage() {
                         sectionId={section.id}
                         title={section.title}
                         content={section.content || ''}
+                        sensitiveMarks={section.sensitiveMarks || []}
                         onContentChange={handleContentChange}
                         onMarkSensitive={(text, level) => handleMarkSensitive(section.id, text, level)}
                       />
@@ -455,19 +480,19 @@ export default function EditPage() {
               </h3>
               <span className={cn(
                 'px-2 py-0.5 rounded-full text-xs font-semibold',
-                localSensitiveMarks.length > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+                allSensitiveMarks.length > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
               )}>
-                {localSensitiveMarks.length} 处
+                {allSensitiveMarks.length} 处
               </span>
             </div>
-            {localSensitiveMarks.length === 0 ? (
+            {allSensitiveMarks.length === 0 ? (
               <div className="py-4 text-center text-xs text-gray-400">
                 暂无敏感标记
                 <p className="mt-1 text-gray-300">在编辑器中选中文本可标记</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-32 overflow-y-auto">
-                {localSensitiveMarks.map((mark) => (
+                {allSensitiveMarks.map((mark) => (
                   <div
                     key={mark.id}
                     className="flex items-start gap-2 p-2 rounded-lg bg-amber-50/50 border border-amber-100"
@@ -511,17 +536,24 @@ export default function EditPage() {
                   <div className="flex-1 overflow-y-auto space-y-3 pr-1">
                     {currentReport.sections
                       .sort((a, b) => a.order - b.order)
-                      .map((section) => (
-                        <div key={section.id}>
-                          <h4 className="font-song text-xs font-bold text-gray-800 mb-1.5">
-                            {section.title}
-                          </h4>
-                          <p className="font-song text-[10px] leading-[1.8] text-gray-700 text-justify indent-6 whitespace-pre-wrap">
-                            {section.content?.slice(0, 200) || '暂无内容'}
-                            {section.content && section.content.length > 200 && '...'}
-                          </p>
-                        </div>
-                      ))}
+                      .map((section) => {
+                        const sectionContent = section.content || '';
+                        const displayContent = sectionContent.slice(0, 200);
+                        const hasMore = sectionContent.length > 200;
+                        return (
+                          <div key={section.id}>
+                            <h4 className="font-song text-xs font-bold text-gray-800 mb-1.5">
+                              {section.title}
+                            </h4>
+                            <p className="font-song text-[10px] leading-[1.8] text-gray-700 text-justify indent-6 whitespace-pre-wrap">
+                              {sectionContent
+                                ? renderPreviewWithHighlights(displayContent, section.sensitiveMarks || [])
+                                : '暂无内容'}
+                              {hasMore && '...'}
+                            </p>
+                          </div>
+                        );
+                      })}
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">

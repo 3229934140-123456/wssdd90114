@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 interface FilterBarProps {
   params: FilterParams;
   onChange: (params: Partial<FilterParams>) => void;
+  heatRange: [number, number];
+  onHeatRangeChange: (range: [number, number]) => void;
 }
 
 const sourceOptions = [
@@ -23,14 +25,14 @@ const sensitiveOptions = [
 ];
 
 const departmentOptions = [
-  { value: 'dept-1', label: '市委宣传部' },
-  { value: 'dept-2', label: '市网信办' },
-  { value: 'dept-3', label: '市公安局' },
-  { value: 'dept-4', label: '市卫健委' },
-  { value: 'dept-5', label: '市教育局' },
-  { value: 'dept-6', label: '市市场监管局' },
-  { value: 'dept-7', label: '市交通局' },
-  { value: 'dept-8', label: '市应急管理局' },
+  { value: '教育局', label: '市教育局' },
+  { value: '卫健委', label: '市卫健委' },
+  { value: '交通局', label: '市交通局' },
+  { value: '市场监管局', label: '市市场监管局' },
+  { value: '应急管理局', label: '市应急管理局' },
+  { value: '生态环境局', label: '市生态环境局' },
+  { value: '住建委', label: '市住建委' },
+  { value: '城管执法局', label: '市城管执法局' },
 ];
 
 const districtOptions = [
@@ -152,9 +154,8 @@ function getDateRange(daysAgo: number): { start: string; end: string } {
   };
 }
 
-export default function FilterBar({ params, onChange }: FilterBarProps) {
+export default function FilterBar({ params, onChange, heatRange, onHeatRangeChange }: FilterBarProps) {
   const [activeQuickDate, setActiveQuickDate] = useState<string | null>(null);
-  const [heatRange, setHeatRange] = useState<[number, number]>([0, 100]);
 
   const handleKeywordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onChange({ keyword: e.target.value });
@@ -171,7 +172,7 @@ export default function FilterBar({ params, onChange }: FilterBarProps) {
   };
 
   const handleDeptChange = (value: (string | number)[]) => {
-    onChange({ handlerId: value.length > 0 ? String(value[0]) : undefined });
+    onChange({ departmentTags: value.length > 0 ? (value as string[]) : undefined });
   };
 
   const handleDistrictChange = (value: (string | number)[]) => {
@@ -194,17 +195,18 @@ export default function FilterBar({ params, onChange }: FilterBarProps) {
     newRange[index] = val;
     if (index === 0 && val > heatRange[1]) newRange[0] = heatRange[1];
     if (index === 1 && val < heatRange[0]) newRange[1] = heatRange[0];
-    setHeatRange(newRange);
+    onHeatRangeChange(newRange);
   };
 
   const handleReset = () => {
     setActiveQuickDate(null);
-    setHeatRange([0, 100]);
+    onHeatRangeChange([0, 100]);
     onChange({
       keyword: '',
       source: undefined,
       sensitiveLevel: undefined,
       handlerId: undefined,
+      departmentTags: undefined,
       category: undefined,
       dateRange: undefined,
       page: 1,
@@ -213,7 +215,7 @@ export default function FilterBar({ params, onChange }: FilterBarProps) {
 
   const sourceValues = (params.source || []) as string[];
   const sensitiveValues = (params.sensitiveLevel || []) as number[];
-  const deptValues = params.handlerId ? [params.handlerId] : [];
+  const deptValues = params.departmentTags || [];
   const districtValues = params.category
     ? Array.isArray(params.category)
       ? params.category

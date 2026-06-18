@@ -58,6 +58,7 @@ export interface ReportSection {
   content?: string;
   dataConfig?: Record<string, unknown>;
   required?: boolean;
+  sensitiveMarks?: SensitiveMark[];
 }
 
 export interface SensitiveMark {
@@ -150,4 +151,7 @@ export interface FilterParams {
   pageSize?: number;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  departmentTags?: string[];
+  heatMin?: number;
+  heatMax?: number;
 }

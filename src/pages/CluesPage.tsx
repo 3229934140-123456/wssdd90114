@@ -83,8 +83,11 @@ function filterClues(clueList: Clue[], params: ReturnType<typeof useAppStore.get
       if (levels.length > 0 && !levels.includes(clue.sensitiveLevel)) return false;
     }
 
-    if (params.handlerId) {
-      if (clue.handlerId !== params.handlerId) return false;
+    if (params.departmentTags && params.departmentTags.length > 0) {
+      const hasMatchingTag = params.departmentTags.some((deptTag) =>
+        clue.tags.some((tag) => tag.includes(deptTag) || deptTag.includes(tag))
+      );
+      if (!hasMatchingTag) return false;
     }
 
     if (params.category) {
@@ -555,7 +558,12 @@ export default function CluesPage() {
             />
           </div>
 
-          <FilterBar params={filterParams} onChange={handleFilterChange} />
+          <FilterBar
+            params={filterParams}
+            onChange={handleFilterChange}
+            heatRange={heatRange}
+            onHeatRangeChange={setHeatRange}
+          />
         </div>
 
         <div className="relative">
@@ -580,6 +588,7 @@ export default function CluesPage() {
                       sensitiveLevel: undefined,
                       dateRange: undefined,
                       handlerId: undefined,
+                      departmentTags: undefined,
                       creatorId: undefined,
                       page: 1,
                     });

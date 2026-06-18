@@ -21,9 +21,8 @@ import {
 } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import DiffViewer from '@/components/DiffViewer';
-import { reports } from '@/data/reports';
-import { reviews } from '@/data/reviews';
-import type { Report, ReviewRecord } from '@/shared/types';
+import { useAppStore } from '@/store/appStore';
+import type { Report, ReviewRecord, SensitiveMark } from '@/shared/types';
 import { cn } from '@/lib/utils';
 import { formatTime } from '@/utils/format';
 
@@ -88,17 +87,19 @@ interface ReviewPageProps {
 }
 
 export default function ReviewPage({ className }: ReviewPageProps) {
+  const { reportsList, reviewRecordsList } = useAppStore();
+
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const [keyword, setKeyword] = useState('');
-  const [selectedReportId, setSelectedReportId] = useState<string>(reports[0]?.id || '');
+  const [selectedReportId, setSelectedReportId] = useState<string>(reportsList[0]?.id || '');
   const [activeTab, setActiveTab] = useState<'detail' | 'diff' | 'preview'>('detail');
   const [diffOldVersion, setDiffOldVersion] = useState<number>(1);
   const [diffNewVersion, setDiffNewVersion] = useState<number>(2);
 
   const nonDraftReports = useMemo(
-    () => reports.filter((r) => r.status !== 'draft'),
-    []
+    () => reportsList.filter((r) => r.status !== 'draft'),
+    [reportsList]
   );
 
   const stats = useMemo(() => {
@@ -154,16 +155,16 @@ export default function ReviewPage({ className }: ReviewPageProps) {
   }, [nonDraftReports, statusFilter, dateRange, keyword]);
 
   const selectedReport = useMemo(
-    () => reports.find((r) => r.id === selectedReportId),
-    [reports, selectedReportId]
+    () => reportsList.find((r) => r.id === selectedReportId),
+    [reportsList, selectedReportId]
   );
 
   const relatedReviews = useMemo(() => {
     if (!selectedReport) return [];
-    return reviews
+    return reviewRecordsList
       .filter((rv) => rv.targetId === selectedReport.id && rv.targetType === 'report')
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }, [selectedReport]);
+  }, [selectedReport, reviewRecordsList]);
 
   const availableVersions = useMemo(() => {
     if (!selectedReport) return [];
@@ -188,7 +189,7 @@ export default function ReviewPage({ className }: ReviewPageProps) {
       .join('\n\n');
   };
 
-  const highlightSensitive = (text: string) => {
+  const highlightSensitive = (text: string, sensitiveMarks?: SensitiveMark[]) => {
     let result: (string | JSX.Element)[] = [text];
     SENSITIVE_WORDS.forEach((word) => {
       const next: (string | JSX.Element)[] = [];
@@ -202,7 +203,7 @@ export default function ReviewPage({ className }: ReviewPageProps) {
           if (i > 0) {
             next.push(
               <mark
-                key={`${word}-${idx}-${i}`}
+                key={`sw-${word}-${idx}-${i}`}
                 className="bg-yellow-200 text-yellow-900 px-0.5 rounded font-medium"
               >
                 {word}
@@ -214,6 +215,33 @@ export default function ReviewPage({ className }: ReviewPageProps) {
       });
       result = next;
     });
+    if (sensitiveMarks && sensitiveMarks.length > 0) {
+      sensitiveMarks.forEach((mark, markIdx) => {
+        const next: (string | JSX.Element)[] = [];
+        result.forEach((part, idx) => {
+          if (typeof part !== 'string') {
+            next.push(part);
+            return;
+          }
+          const parts = part.split(mark.content);
+          parts.forEach((p, i) => {
+            if (i > 0) {
+              const bgColor = mark.level >= 3 ? 'bg-orange-200 text-orange-900' : 'bg-yellow-200 text-yellow-900';
+              next.push(
+                <mark
+                  key={`sm-${mark.id}-${markIdx}-${idx}-${i}`}
+                  className={`${bgColor} px-0.5 rounded font-medium`}
+                >
+                  {mark.content}
+                </mark>
+              );
+            }
+            if (p) next.push(p);
+          });
+        });
+        result = next;
+      });
+    }
     return result;
   };
 
@@ -909,7 +937,7 @@ function OriginalPreview({
   highlightSensitive,
 }: {
   report: Report;
-  highlightSensitive: (text: string) => (string | JSX.Element)[];
+  highlightSensitive: (text: string, sensitiveMarks?: SensitiveMark[]) => (string | JSX.Element)[];
 }) {
   return (
     <div className="max-w-[820px] mx-auto">
@@ -956,7 +984,7 @@ function OriginalPreview({
                   {section.content
                     ? section.content.split('\n\n').map((para, idx) => (
                         <p key={idx} className="indent-8 mb-4 last:mb-0">
-                          {highlightSensitive(para)}
+                          {highlightSensitive(para, section.sensitiveMarks)}
                         </p>
                       ))
                     : null}
@@ -969,12 +997,12 @@ function OriginalPreview({
                             <span className="absolute -left-5 top-1 w-2 h-2 bg-gov-accent rounded-full" />
                             {item.title && (
                               <span className="font-semibold text-gray-900">
-                                {highlightSensitive(item.title)}
+                                {highlightSensitive(item.title, section.sensitiveMarks)}
                               </span>
                             )}
                             {item.desc && (
                               <span className="text-gray-700 ml-1">
-                                — {highlightSensitive(item.desc)}
+                                — {highlightSensitive(item.desc, section.sensitiveMarks)}
                               </span>
                             )}
                           </li>

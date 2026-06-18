@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { Sparkles, AlertTriangle, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SensitiveMark } from '@/shared/types';
 
 interface SectionEditorProps {
   sectionId: string;
@@ -8,6 +9,7 @@ interface SectionEditorProps {
   content: string;
   onContentChange: (id: string, content: string) => void;
   onMarkSensitive?: (text: string, level: number) => void;
+  sensitiveMarks?: SensitiveMark[];
 }
 
 interface SensitiveHighlight {
@@ -21,16 +23,27 @@ export default function SectionEditor({
   content,
   onContentChange,
   onMarkSensitive,
+  sensitiveMarks,
 }: SectionEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
-  const [sensitiveHighlights, setSensitiveHighlights] = useState<SensitiveHighlight[]>([]);
+  const [sensitiveHighlights, setSensitiveHighlights] = useState<SensitiveHighlight[]>(
+    sensitiveMarks?.map((mark) => ({ text: mark.content, level: mark.level })) || []
+  );
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== content) {
+    if (sensitiveMarks) {
+      setSensitiveHighlights(
+        sensitiveMarks.map((mark) => ({ text: mark.content, level: mark.level }))
+      );
+    }
+  }, [sensitiveMarks]);
+
+  useEffect(() => {
+    if (editorRef.current) {
       editorRef.current.innerHTML = renderWithHighlights(content, sensitiveHighlights);
     }
-  }, [content]);
+  }, [content, sensitiveHighlights]);
 
   const renderWithHighlights = (text: string, highlights: SensitiveHighlight[]): string => {
     if (highlights.length === 0) return text;

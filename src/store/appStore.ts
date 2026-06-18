@@ -5,7 +5,13 @@ import type {
   ReportSection,
   FilterParams,
   SensitiveMark,
+  ReviewRecord,
 } from '../shared/types';
+import { reports as initialReports } from '../data/reports';
+import { reviews as initialReviews } from '../data/reviews';
+
+const REPORTS_STORAGE_KEY = 'opinion-reports';
+const REVIEWS_STORAGE_KEY = 'opinion-reviews';
 
 const TEMPLATE_TYPE_MAP: Record<string, Report['type']> = {
   daily: 'daily',
@@ -186,11 +192,53 @@ function generateReportTitle(type: Report['type']): string {
   return base;
 }
 
+function saveReportsToStorage(reports: Report[]): void {
+  try {
+    localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(reports));
+  } catch (e) {
+    console.error('Failed to save reports to localStorage:', e);
+  }
+}
+
+function saveReviewsToStorage(reviews: ReviewRecord[]): void {
+  try {
+    localStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(reviews));
+  } catch (e) {
+    console.error('Failed to save reviews to localStorage:', e);
+  }
+}
+
+function loadReportsFromStorage(): Report[] {
+  try {
+    const stored = localStorage.getItem(REPORTS_STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load reports from localStorage:', e);
+  }
+  return initialReports;
+}
+
+function loadReviewsFromStorage(): ReviewRecord[] {
+  try {
+    const stored = localStorage.getItem(REVIEWS_STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load reviews from localStorage:', e);
+  }
+  return initialReviews;
+}
+
 export type TemplateType = 'daily' | 'urgent' | 'topic';
 
 interface AppState {
   selectedClueIds: string[];
   currentReport: Report | null;
+  reportsList: Report[];
+  reviewRecordsList: ReviewRecord[];
   filterParams: FilterParams;
   userInfo: { id: string; name: string; role: string };
   toggleClue: (id: string) => void;
@@ -202,11 +250,14 @@ interface AppState {
   addSensitiveMark: (sectionId: string, mark: Omit<SensitiveMark, 'id' | 'markerId' | 'markerName' | 'markedAt'>) => void;
   updateReportStatus: (status: Report['status']) => void;
   submitReport: () => void;
+  loadPersistedData: () => void;
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
   selectedClueIds: [],
   currentReport: null,
+  reportsList: [],
+  reviewRecordsList: [],
   filterParams: {
     keyword: '',
     status: undefined,
@@ -215,6 +266,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
     source: undefined,
     sensitiveLevel: undefined,
     dateRange: undefined,
+    handlerId: undefined,
+    creatorId: undefined,
+    departmentTags: undefined,
     page: 1,
     pageSize: 20,
     sortBy: 'heat',
@@ -224,6 +278,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
     id: 'h001',
     name: '张明华',
     role: '宣传部舆情处值班员',
+  },
+
+  loadPersistedData: () => {
+    const reports = loadReportsFromStorage();
+    const reviews = loadReviewsFromStorage();
+    set({
+      reportsList: reports,
+      reviewRecordsList: reviews,
+    });
   },
 
   toggleClue: (id: string) => {
@@ -305,7 +368,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
-  addSensitiveMark: (_sectionId: string, mark: Omit<SensitiveMark, 'id' | 'markerId' | 'markerName' | 'markedAt'>) => {
+  addSensitiveMark: (sectionId: string, mark: Omit<SensitiveMark, 'id' | 'markerId' | 'markerName' | 'markedAt'>) => {
     const { userInfo, currentReport } = get();
     if (!currentReport) return;
     const newMark: SensitiveMark = {
@@ -317,12 +380,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
     };
     set((state) => {
       if (!state.currentReport) return state;
+      const updatedSections = state.currentReport.sections.map((s) => {
+        if (s.id === sectionId) {
+          return {
+            ...s,
+            sensitiveMarks: [...(s.sensitiveMarks || []), newMark],
+          };
+        }
+        return s;
+      });
+      const updatedReport = {
+        ...state.currentReport,
+        updatedAt: formatDate(new Date()),
+        sections: updatedSections,
+      };
       return {
-        currentReport: {
-          ...state.currentReport,
-          updatedAt: formatDate(new Date()),
-          isSensitive: true,
-        },
+        currentReport: updatedReport,
       };
     });
     return newMark;
@@ -348,18 +421,51 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   submitReport: () => {
-    const { currentReport, userInfo } = get();
+    const { currentReport, userInfo, reportsList, reviewRecordsList } = get();
     if (!currentReport) return;
     const now = formatDate(new Date());
+    const updatedReport: Report = {
+      ...currentReport,
+      status: 'submitted',
+      updatedAt: now,
+      submittedAt: now,
+      creatorId: userInfo.id,
+      creatorName: userInfo.name,
+    };
+
+    const existingIndex = reportsList.findIndex((r) => r.id === updatedReport.id);
+    let newReportsList: Report[];
+    if (existingIndex >= 0) {
+      newReportsList = [...reportsList];
+      newReportsList[existingIndex] = updatedReport;
+    } else {
+      newReportsList = [updatedReport, ...reportsList];
+    }
+
+    const newReviewRecord: ReviewRecord = {
+      id: generateId('rv'),
+      targetId: updatedReport.id,
+      targetType: 'report',
+      action: 'submit',
+      result: 'pending',
+      reviewerId: userInfo.id,
+      reviewerName: userInfo.name,
+      reviewerRole: userInfo.role,
+      createdAt: now,
+      changes: [
+        { field: 'status', oldValue: currentReport.status, newValue: 'submitted' },
+      ],
+    };
+
+    const newReviewRecordsList = [...reviewRecordsList, newReviewRecord];
+
+    saveReportsToStorage(newReportsList);
+    saveReviewsToStorage(newReviewRecordsList);
+
     set({
-      currentReport: {
-        ...currentReport,
-        status: 'submitted',
-        updatedAt: now,
-        submittedAt: now,
-        creatorId: userInfo.id,
-        creatorName: userInfo.name,
-      },
+      currentReport: updatedReport,
+      reportsList: newReportsList,
+      reviewRecordsList: newReviewRecordsList,
     });
   },
 }));
