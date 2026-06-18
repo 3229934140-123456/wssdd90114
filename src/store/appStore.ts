@@ -249,7 +249,12 @@ interface AppState {
   updateSection: (sectionId: string, content: string) => void;
   addSensitiveMark: (sectionId: string, mark: Omit<SensitiveMark, 'id' | 'markerId' | 'markerName' | 'markedAt'>) => void;
   updateReportStatus: (status: Report['status']) => void;
+  updateReportTitle: (title: string) => void;
   submitReport: () => void;
+  saveDraft: () => void;
+  loadDraft: (reportId: string) => void;
+  approveReport: (reportId: string, comment: string) => void;
+  rejectReport: (reportId: string, reason: string) => void;
   loadPersistedData: () => void;
 }
 
@@ -417,6 +422,136 @@ export const useAppStore = create<AppState>()((set, get) => ({
           version: needsVersionBump ? state.currentReport.version + 1 : state.currentReport.version,
         },
       };
+    });
+  },
+
+  updateReportTitle: (title: string) => {
+    set((state) => {
+      if (!state.currentReport) return state;
+      return {
+        currentReport: {
+          ...state.currentReport,
+          title,
+          updatedAt: formatDate(new Date()),
+        },
+      };
+    });
+  },
+
+  saveDraft: () => {
+    const { currentReport, reportsList } = get();
+    if (!currentReport) return;
+    const now = formatDate(new Date());
+    const updatedReport: Report = {
+      ...currentReport,
+      status: 'draft',
+      updatedAt: now,
+    };
+    const existingIndex = reportsList.findIndex((r) => r.id === updatedReport.id);
+    let newReportsList: Report[];
+    if (existingIndex >= 0) {
+      newReportsList = [...reportsList];
+      newReportsList[existingIndex] = updatedReport;
+    } else {
+      newReportsList = [updatedReport, ...reportsList];
+    }
+    saveReportsToStorage(newReportsList);
+    set({
+      currentReport: updatedReport,
+      reportsList: newReportsList,
+    });
+  },
+
+  loadDraft: (reportId: string) => {
+    const { reportsList } = get();
+    const report = reportsList.find((r) => r.id === reportId);
+    if (report) {
+      set({
+        currentReport: { ...report },
+      });
+    }
+  },
+
+  approveReport: (reportId: string, comment: string) => {
+    const { reportsList, reviewRecordsList, userInfo } = get();
+    const reportIndex = reportsList.findIndex((r) => r.id === reportId);
+    if (reportIndex < 0) return;
+    const now = formatDate(new Date());
+    const updatedReport: Report = {
+      ...reportsList[reportIndex],
+      status: 'approved',
+      updatedAt: now,
+      approverId: userInfo.id,
+      approverName: userInfo.name,
+      approvedAt: now,
+    };
+    const newReportsList = [...reportsList];
+    newReportsList[reportIndex] = updatedReport;
+
+    const newReviewRecord: ReviewRecord = {
+      id: generateId('rv'),
+      targetId: reportId,
+      targetType: 'report',
+      action: 'approve',
+      result: 'pass',
+      comment,
+      reviewerId: userInfo.id,
+      reviewerName: userInfo.name,
+      reviewerRole: userInfo.role,
+      createdAt: now,
+      changes: [
+        { field: 'status', oldValue: reportsList[reportIndex].status, newValue: 'approved' },
+      ],
+    };
+    const newReviewRecordsList = [...reviewRecordsList, newReviewRecord];
+
+    saveReportsToStorage(newReportsList);
+    saveReviewsToStorage(newReviewRecordsList);
+
+    set({
+      reportsList: newReportsList,
+      reviewRecordsList: newReviewRecordsList,
+    });
+  },
+
+  rejectReport: (reportId: string, reason: string) => {
+    const { reportsList, reviewRecordsList, userInfo } = get();
+    const reportIndex = reportsList.findIndex((r) => r.id === reportId);
+    if (reportIndex < 0) return;
+    const now = formatDate(new Date());
+    const updatedReport: Report = {
+      ...reportsList[reportIndex],
+      status: 'rejected',
+      updatedAt: now,
+      rejectReason: reason,
+    };
+    const newReportsList = [...reportsList];
+    newReportsList[reportIndex] = updatedReport;
+
+    const newReviewRecord: ReviewRecord = {
+      id: generateId('rv'),
+      targetId: reportId,
+      targetType: 'report',
+      action: 'reject',
+      result: 'fail',
+      comment: reason,
+      reviewerId: userInfo.id,
+      reviewerName: userInfo.name,
+      reviewerRole: userInfo.role,
+      createdAt: now,
+      changes: [
+        { field: 'status', oldValue: reportsList[reportIndex].status, newValue: 'rejected' },
+        { field: 'rejectReason', oldValue: reportsList[reportIndex].rejectReason || '', newValue: reason },
+      ],
+    };
+    const newReviewRecordsList = [...reviewRecordsList, newReviewRecord];
+
+    saveReportsToStorage(newReportsList);
+    saveReviewsToStorage(newReviewRecordsList);
+
+    set({
+      reportsList: newReportsList,
+      reviewRecordsList: newReviewRecordsList,
     });
   },
 

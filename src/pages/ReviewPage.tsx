@@ -18,6 +18,7 @@ import {
   GitCompare,
   ClipboardCheck,
   Sparkles,
+  ShieldAlert,
 } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import DiffViewer from '@/components/DiffViewer';
@@ -87,20 +88,36 @@ interface ReviewPageProps {
 }
 
 export default function ReviewPage({ className }: ReviewPageProps) {
-  const { reportsList, reviewRecordsList } = useAppStore();
+  const { reportsList, reviewRecordsList, approveReport, rejectReport } = useAppStore();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [templateFilter, setTemplateFilter] = useState<string>('all');
+  const [creatorFilter, setCreatorFilter] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const [keyword, setKeyword] = useState('');
   const [selectedReportId, setSelectedReportId] = useState<string>(reportsList[0]?.id || '');
   const [activeTab, setActiveTab] = useState<'detail' | 'diff' | 'preview'>('detail');
   const [diffOldVersion, setDiffOldVersion] = useState<number>(1);
   const [diffNewVersion, setDiffNewVersion] = useState<number>(2);
+  const [showSensitiveMarks, setShowSensitiveMarks] = useState(true);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [reviewComment, setReviewComment] = useState('');
 
   const nonDraftReports = useMemo(
     () => reportsList.filter((r) => r.status !== 'draft'),
     [reportsList]
   );
+
+  const creatorOptions = useMemo(() => {
+    const creators = new Set(nonDraftReports.map((r) => r.creatorName));
+    return ['all', ...Array.from(creators)];
+  }, [nonDraftReports]);
+
+  const templateOptions = useMemo(() => {
+    const templates = new Set(nonDraftReports.map((r) => r.type));
+    return ['all', ...Array.from(templates)];
+  }, [nonDraftReports]);
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -130,9 +147,17 @@ export default function ReviewPage({ className }: ReviewPageProps) {
       list = list.filter((r) => r.status === 'rejected');
     }
 
+    if (templateFilter !== 'all') {
+      list = list.filter((r) => r.type === templateFilter);
+    }
+
+    if (creatorFilter !== 'all') {
+      list = list.filter((r) => r.creatorName === creatorFilter);
+    }
+
     if (dateRange) {
       list = list.filter((r) => {
-        const created = new Date(r.createdAt).getTime();
+        const created = new Date(r.submittedAt || r.createdAt).getTime();
         const start = new Date(dateRange.start).getTime();
         const end = new Date(dateRange.end).getTime();
         return created >= start && created <= end;
@@ -149,15 +174,26 @@ export default function ReviewPage({ className }: ReviewPageProps) {
       );
     }
 
-    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    list.sort((a, b) => new Date(b.submittedAt || b.createdAt).getTime() - new Date(a.submittedAt || a.createdAt).getTime());
 
     return list;
-  }, [nonDraftReports, statusFilter, dateRange, keyword]);
+  }, [nonDraftReports, statusFilter, templateFilter, creatorFilter, dateRange, keyword]);
 
   const selectedReport = useMemo(
     () => reportsList.find((r) => r.id === selectedReportId),
     [reportsList, selectedReportId]
   );
+
+  const allSensitiveMarksForReport = useMemo(() => {
+    if (!selectedReport) return [];
+    return selectedReport.sections.flatMap((section) =>
+      (section.sensitiveMarks || []).map((mark) => ({
+        ...mark,
+        sectionId: section.id,
+        sectionTitle: section.title,
+      }))
+    );
+  }, [selectedReport]);
 
   const relatedReviews = useMemo(() => {
     if (!selectedReport) return [];
@@ -265,6 +301,35 @@ export default function ReviewPage({ className }: ReviewPageProps) {
     window.print();
   };
 
+  const handleApprove = () => {
+    if (!selectedReport) return;
+    approveReport(selectedReport.id, reviewComment);
+    setShowApproveModal(false);
+    setReviewComment('');
+  };
+
+  const handleReject = () => {
+    if (!selectedReport || !reviewComment.trim()) return;
+    rejectReport(selectedReport.id, reviewComment);
+    setShowRejectModal(false);
+    setReviewComment('');
+  };
+
+  const handleResetFilters = () => {
+    setStatusFilter('all');
+    setTemplateFilter('all');
+    setCreatorFilter('all');
+    setDateRange(null);
+    setKeyword('');
+  };
+
+  const scrollToSection = (sectionId: string) => {
+    const element = document.getElementById(`section-${sectionId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className={cn('h-full flex flex-col bg-gov-bg', className)}>
       <header className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
@@ -335,9 +400,40 @@ export default function ReviewPage({ className }: ReviewPageProps) {
               ))}
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">模板类型</label>
+                <select
+                  value={templateFilter}
+                  onChange={(e) => setTemplateFilter(e.target.value)}
+                  className="w-full px-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gov-deepblue/20 focus:border-gov-deepblue/40"
+                >
+                  {templateOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt === 'all' ? '全部模板' : templateTypeLabels[opt as Report['type']]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">提交人</label>
+                <select
+                  value={creatorFilter}
+                  onChange={(e) => setCreatorFilter(e.target.value)}
+                  className="w-full px-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gov-deepblue/20 focus:border-gov-deepblue/40"
+                >
+                  {creatorOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt === 'all' ? '全部提交人' : opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              <div className="flex items-center gap-1 flex-wrap">
+              <div className="flex-1 flex items-center gap-1 flex-wrap">
                 {[
                   { label: '今日', days: 0 },
                   { label: '近3天', days: 2 },
@@ -375,23 +471,31 @@ export default function ReviewPage({ className }: ReviewPageProps) {
               </div>
             </div>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="搜索标题、提交人、摘要..."
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gov-deepblue/20 focus:border-gov-deepblue/40 transition-all placeholder:text-gray-400"
-              />
-              {keyword && (
-                <button
-                  onClick={() => setKeyword('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <XCircle className="w-4 h-4" />
-                </button>
-              )}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="搜索标题、提交人、摘要..."
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gov-deepblue/20 focus:border-gov-deepblue/40 transition-all placeholder:text-gray-400"
+                />
+                {keyword && (
+                  <button
+                    onClick={() => setKeyword('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={handleResetFilters}
+                className="px-3 py-2 text-xs text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 hover:text-gray-700 transition-all"
+              >
+                重置
+              </button>
             </div>
           </div>
 
@@ -440,7 +544,16 @@ export default function ReviewPage({ className }: ReviewPageProps) {
 
               <div className="flex-1 overflow-y-auto p-6">
                 {activeTab === 'detail' && (
-                  <ApprovalDetail report={selectedReport} reviews={relatedReviews} />
+                  <ApprovalDetail
+                    report={selectedReport}
+                    reviews={relatedReviews}
+                    showActions={true}
+                    onShowApprove={() => setShowApproveModal(true)}
+                    onShowReject={() => {
+                      setReviewComment('');
+                      setShowRejectModal(true);
+                    }}
+                  />
                 )}
                 {activeTab === 'diff' && (
                   <VersionCompare
@@ -454,9 +567,112 @@ export default function ReviewPage({ className }: ReviewPageProps) {
                   />
                 )}
                 {activeTab === 'preview' && (
-                  <OriginalPreview report={selectedReport} highlightSensitive={highlightSensitive} />
+                  <OriginalPreview
+                    report={selectedReport}
+                    highlightSensitive={highlightSensitive}
+                    showMarks={showSensitiveMarks}
+                    onToggleMarks={() => setShowSensitiveMarks(!showSensitiveMarks)}
+                    allMarks={allSensitiveMarksForReport}
+                    onScrollToSection={scrollToSection}
+                  />
                 )}
               </div>
+
+              {showApproveModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slideRight">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100">
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">通过审批</h3>
+                        <p className="text-sm text-gray-500">确认通过该专报</p>
+                      </div>
+                    </div>
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        审批意见 <span className="text-gray-400 text-xs">（可选）</span>
+                      </label>
+                      <textarea
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        placeholder="请输入审批意见..."
+                        rows={3}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-400 transition-all resize-none"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        onClick={() => {
+                          setShowApproveModal(false);
+                          setReviewComment('');
+                        }}
+                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleApprove}
+                        className="px-4 py-2 rounded-lg bg-green-600 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+                      >
+                        确认通过
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showRejectModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slideRight">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
+                        <XCircle className="h-5 w-5 text-red-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">退回专报</h3>
+                        <p className="text-sm text-gray-500">请填写退回原因</p>
+                      </div>
+                    </div>
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        退回原因 <span className="text-red-500 text-xs">*必填</span>
+                      </label>
+                      <textarea
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        placeholder="请详细说明退回原因，以便修改完善..."
+                        rows={4}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 transition-all resize-none"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        onClick={() => {
+                          setShowRejectModal(false);
+                          setReviewComment('');
+                        }}
+                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleReject}
+                        disabled={!reviewComment.trim()}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors',
+                          reviewComment.trim()
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : 'bg-gray-300 cursor-not-allowed'
+                        )}
+                      >
+                        确认退回
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -563,8 +779,8 @@ function TimelineList({
               </div>
               <div className="flex items-center gap-4 text-xs text-gray-500">
                 <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {formatTime(report.createdAt, 'MM-DD HH:mm')}
+                  <Clock className="w-3.5 h-3.5" />
+                  {formatTime(report.submittedAt || report.createdAt, 'MM-DD HH:mm')}
                 </span>
                 <span className="flex items-center gap-1">
                   <User className="w-3.5 h-3.5" />
@@ -589,17 +805,36 @@ function VersionBadge({ version }: { version: number }) {
   );
 }
 
-function ApprovalDetail({ report, reviews }: { report: Report; reviews: ReviewRecord[] }) {
+function ApprovalDetail({
+  report,
+  reviews,
+  showActions,
+  onShowApprove,
+  onShowReject,
+}: {
+  report: Report;
+  reviews: ReviewRecord[];
+  showActions: boolean;
+  onShowApprove: () => void;
+  onShowReject: () => void;
+}) {
+  const canReview = report.status === 'submitted' || report.status === 'reviewing';
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 bg-gradient-to-r from-gov-deepblue to-gov-navy text-white">
-          <h2 className="text-lg font-bold mb-1">{report.title}</h2>
-          <div className="flex items-center gap-3 text-sm text-white/80">
-            <span className="flex items-center gap-1">
-              <FileText className="w-4 h-4" />
-              {report.templateName || '自定义模板'}
-            </span>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold mb-1">{report.title}</h2>
+              <div className="flex items-center gap-3 text-sm text-white/80">
+                <span className="flex items-center gap-1">
+                  <FileText className="w-4 h-4" />
+                  {report.templateName || '自定义模板'}
+                </span>
+              </div>
+            </div>
+            <StatusBadge status={report.status} size="md" />
           </div>
         </div>
         <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -613,9 +848,39 @@ function ApprovalDetail({ report, reviews }: { report: Report; reviews: ReviewRe
                 : ''
             }
           />
+          <InfoItem label="提交人" value={report.creatorName} />
+          <InfoItem
+            label="提交时间"
+            value={formatTime(report.submittedAt || report.createdAt, 'YYYY-MM-DD HH:mm')}
+          />
           <InfoItem label="创建时间" value={formatTime(report.createdAt, 'YYYY-MM-DD HH:mm')} />
           <InfoItem label="当前版本" value={`V${report.version}`} valueClass="font-bold text-gov-deepblue" />
+          {report.approverName && (
+            <InfoItem label="审批人" value={report.approverName} />
+          )}
+          {report.approvedAt && (
+            <InfoItem label="审批时间" value={formatTime(report.approvedAt, 'YYYY-MM-DD HH:mm')} />
+          )}
         </div>
+        {showActions && canReview && (
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center gap-3">
+            <span className="text-sm text-gray-600 font-medium">领导审批：</span>
+            <button
+              onClick={onShowApprove}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              通过
+            </button>
+            <button
+              onClick={onShowReject}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+            >
+              <XCircle className="w-4 h-4" />
+              退回
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -935,13 +1200,99 @@ function VersionSelect({
 function OriginalPreview({
   report,
   highlightSensitive,
+  showMarks,
+  onToggleMarks,
+  allMarks,
+  onScrollToSection,
 }: {
   report: Report;
   highlightSensitive: (text: string, sensitiveMarks?: SensitiveMark[]) => (string | JSX.Element)[];
+  showMarks: boolean;
+  onToggleMarks: () => void;
+  allMarks: Array<SensitiveMark & { sectionId: string; sectionTitle: string }>;
+  onScrollToSection: (sectionId: string) => void;
 }) {
+  const marksBySection = useMemo(() => {
+    const grouped: Record<string, Array<SensitiveMark & { sectionId: string; sectionTitle: string }>> = {};
+    allMarks.forEach((mark) => {
+      if (!grouped[mark.sectionId]) {
+        grouped[mark.sectionId] = [];
+      }
+      grouped[mark.sectionId].push(mark);
+    });
+    return grouped;
+  }, [allMarks]);
+
+  const safeHighlight = (text: string, sensitiveMarks?: SensitiveMark[]) => {
+    if (!showMarks) return [text];
+    return highlightSensitive(text, sensitiveMarks);
+  };
+
   return (
-    <div className="max-w-[820px] mx-auto">
-      <div className="bg-[#faf8f5] rounded-xl border border-gray-200 p-3 shadow-lg mb-6">
+    <div className="max-w-[900px] mx-auto">
+      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-amber-600" />
+            <h3 className="text-sm font-semibold text-gray-800">敏感表述标记</h3>
+            <span className={cn(
+              'px-2 py-0.5 rounded-full text-xs font-semibold',
+              allMarks.length > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+            )}>
+              共 {allMarks.length} 处
+            </span>
+          </div>
+          <button
+            onClick={onToggleMarks}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+              showMarks
+                ? 'bg-gov-deepblue text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            {showMarks ? '隐藏标记' : '显示标记'}
+          </button>
+        </div>
+        {allMarks.length > 0 && (
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {Object.entries(marksBySection).map(([sectionId, marks]) => {
+              const section = report.sections.find((s) => s.id === sectionId);
+              return (
+                <div key={sectionId} className="flex items-start gap-2 p-2 rounded-lg bg-amber-50/50 border border-amber-100">
+                  <button
+                    onClick={() => onScrollToSection(sectionId)}
+                    className="text-xs text-gov-deepblue hover:text-gov-navy font-medium shrink-0 mt-0.5 hover:underline"
+                  >
+                    {section?.title || '未知章节'}
+                  </button>
+                  <div className="flex-1 flex flex-wrap gap-1.5">
+                    {marks.map((mark) => (
+                      <span
+                        key={mark.id}
+                        className={cn(
+                          'px-1.5 py-0.5 rounded text-xs font-medium',
+                          mark.level >= 3
+                            ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                            : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                        )}
+                      >
+                        {mark.content}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {allMarks.length === 0 && (
+          <p className="text-xs text-gray-400 text-center py-2">暂无敏感表述标记</p>
+        )}
+      </div>
+
+      <div className="bg-[#faf8f5] rounded-xl border border-gray-200 p-3 shadow-lg">
         <div
           className="bg-white mx-auto shadow-inner border border-gray-200/60"
           style={{
@@ -969,14 +1320,14 @@ function OriginalPreview({
             <div className="mb-8 p-4 bg-gray-50 border-l-4 border-gov-deepblue rounded-r-lg">
               <div className="text-xs font-semibold text-gov-deepblue mb-2 tracking-wider">摘 要</div>
               <p className="font-song text-[15px] leading-[2] text-gray-800 indent-8">
-                {highlightSensitive(report.summary)}
+                {safeHighlight(report.summary)}
               </p>
             </div>
           )}
 
           <div className="space-y-8">
             {report.sections.map((section) => (
-              <section key={section.id}>
+              <section key={section.id} id={`section-${section.id}`}>
                 <h2 className="font-song text-lg font-bold text-gray-900 mb-4 pb-2 border-b border-gray-200">
                   {section.title}
                 </h2>
@@ -984,7 +1335,7 @@ function OriginalPreview({
                   {section.content
                     ? section.content.split('\n\n').map((para, idx) => (
                         <p key={idx} className="indent-8 mb-4 last:mb-0">
-                          {highlightSensitive(para, section.sensitiveMarks)}
+                          {safeHighlight(para, section.sensitiveMarks)}
                         </p>
                       ))
                     : null}

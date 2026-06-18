@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Sparkles,
@@ -23,6 +23,7 @@ import { clues as allClues } from '@/data/clues';
 import TemplateCard from '@/components/TemplateCard';
 import SectionEditor from '@/components/SectionEditor';
 import type { SensitiveMark } from '@/shared/types';
+import { formatTime } from '@/utils/format';
 
 const TEMPLATE_TYPES: TemplateType[] = ['daily', 'urgent', 'topic'];
 
@@ -80,6 +81,8 @@ export default function EditPage() {
     updateSection,
     addSensitiveMark,
     submitReport,
+    updateReportTitle,
+    saveDraft,
   } = useAppStore();
 
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateType>('daily');
@@ -88,6 +91,7 @@ export default function EditPage() {
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingTemplate, setPendingTemplate] = useState<TemplateType | null>(null);
   const [reportTitle, setReportTitle] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
 
   const selectedClues = useMemo(() => {
     return allClues.filter((c) => selectedClueIds.includes(c.id));
@@ -97,6 +101,17 @@ export default function EditPage() {
     if (!currentReport) return [];
     return currentReport.sections.flatMap((section) => section.sensitiveMarks || []);
   }, [currentReport]);
+
+  useEffect(() => {
+    if (currentReport && currentReport.title) {
+      setReportTitle(currentReport.title);
+    }
+  }, [currentReport?.id, currentReport?.title]);
+
+  const handleTitleChange = (value: string) => {
+    setReportTitle(value);
+    updateReportTitle(value);
+  };
 
   const handleGenerate = async () => {
     if (selectedClues.length === 0) return;
@@ -150,6 +165,9 @@ export default function EditPage() {
   };
 
   const handleSaveDraft = () => {
+    if (!currentReport) return;
+    saveDraft();
+    setToastMessage('草稿已保存');
     setShowSuccessToast(true);
     setTimeout(() => setShowSuccessToast(false), 2500);
   };
@@ -157,6 +175,7 @@ export default function EditPage() {
   const handleSubmit = () => {
     if (!currentReport) return;
     submitReport();
+    setToastMessage('提交送审成功！正在跳转审核列表...');
     setShowSuccessToast(true);
     setTimeout(() => {
       setShowSuccessToast(false);
@@ -204,7 +223,7 @@ export default function EditPage() {
           <div className="flex items-center gap-3 px-6 py-3 bg-white rounded-xl shadow-xl border border-gov-success/30">
             <CheckCircle2 className="h-5 w-5 text-gov-success" />
             <span className="text-sm font-medium text-gray-800">
-              {currentReport?.status === 'submitted' ? '提交送审成功！正在跳转审核列表...' : '草稿已保存'}
+              {toastMessage}
             </span>
           </div>
         </div>
@@ -326,7 +345,7 @@ export default function EditPage() {
                 <input
                   type="text"
                   value={displayTitle}
-                  onChange={(e) => setReportTitle(e.target.value)}
+                  onChange={(e) => handleTitleChange(e.target.value)}
                   placeholder="请输入专报标题..."
                   className="w-full px-5 py-4 rounded-xl border-2 border-gray-200 bg-white font-song text-2xl font-bold text-gray-900 placeholder:text-gray-300 focus:border-gov-deepblue focus:ring-4 focus:ring-gov-deepblue/10 outline-none transition-all duration-200"
                 />
@@ -421,7 +440,7 @@ export default function EditPage() {
                     </span>
                     <span className="flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5" />
-                      创建时间：<span className="text-gray-700 font-medium">{currentReport?.createdAt || new Date().toLocaleString('zh-CN')}</span>
+                      创建时间：<span className="text-gray-700 font-medium">{formatTime(currentReport?.createdAt || new Date(), 'YYYY-MM-DD HH:mm')}</span>
                     </span>
                   </div>
                   <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100">
